@@ -1,0 +1,52 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# docker-compose.yml — Local Development Stack
+# ═══════════════════════════════════════════════════════════════════════════
+# Usage:
+#   docker-compose up --build
+#
+# Services:
+#   backend   → FastAPI API on http://localhost:8000
+#   frontend  → Streamlit UI on http://localhost:8501
+# ═══════════════════════════════════════════════════════════════════════════
+
+services:
+  backend:
+    build: .
+    container_name: bis-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - ./data:/app/data
+    env_file:
+      - .env
+    command: >
+      uvicorn app_api:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    build: .
+    container_name: bis-frontend
+    ports:
+      - "8501:8501"
+    volumes:
+      - .:/app
+      - ./data:/app/data
+    env_file:
+      - .env
+    command: >
+      streamlit run app.py
+      --server.port=8501
+      --server.address=0.0.0.0
+      --server.headless=true
+    depends_on:
+      - backend
+    restart: unless-stopped
