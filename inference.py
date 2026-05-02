@@ -109,7 +109,7 @@ def run_rag_pipeline(query: str) -> list[str]:
     from src.generator import generate_response
 
     # Step 1: Hybrid retrieval + reranking
-    chunks = retrieve_standards(query, top_k=15, final_k=5)
+    chunks = retrieve_standards(query)
 
     if not chunks:
         logger.warning("No chunks retrieved for query: %s", query[:60])
@@ -118,6 +118,17 @@ def run_rag_pipeline(query: str) -> list[str]:
     # Step 2: LLM generation
     standards = generate_response(query, chunks)
     return standards
+
+
+def _warm_up_models():
+    """Pre-load all ML models into memory so query latency is accurate."""
+    try:
+        from src.retriever import warm_up
+        logger.info("Warming up ML models (embedding + cross-encoder)...")
+        warm_up()
+        logger.info("Model warm-up complete.")
+    except Exception as e:
+        logger.warning("Model warm-up failed (will lazy-load on first query): %s", e)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -160,6 +171,9 @@ def main():
     from src.config import SQLITE_CACHE_PATH
 
     cache = QueryCache(SQLITE_CACHE_PATH)
+
+    # ── Warm up models (so first query doesn't pay model-load cost) ──────────
+    _warm_up_models()
 
     # ── Process queries ──────────────────────────────────────────────────────
     results: list[dict] = []
