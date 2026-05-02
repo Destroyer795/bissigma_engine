@@ -26,6 +26,11 @@ COPY . .
 # ── Create data directory ───────────────────────────────────────────────
 RUN mkdir -p /app/data/chromadb
 
+# ── Pre-download ML models (baked into image for fast cold-start) ────────
+RUN python -c "from sentence_transformers import SentenceTransformer, CrossEncoder; \
+    SentenceTransformer('all-MiniLM-L6-v2'); \
+    CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')"
+
 # ── Expose ports ─────────────────────────────────────────────────────────
 # FastAPI: 8000 | Streamlit: 8501
 EXPOSE 8000 8501

@@ -5,10 +5,16 @@ Hybrid retrieval pipeline:
   1. Dense vector search   → ChromaDB (cosine similarity)
   2. Sparse keyword search → BM25 over the full corpus
   3. Reciprocal Rank Fusion to merge both result sets
-  4. Cross-Encoder reranking (BAAI/bge-reranker-base) → final top-k
+  4. Cross-Encoder reranking (ms-marco-MiniLM-L-6-v2) → final top-k
+
+Performance notes:
+  - Cross-encoder text is truncated to 512 chars (model max ~512 tokens)
+  - Rerank candidate cap of 10 keeps inference under 1s on CPU
+  - Models are lazy-loaded singletons; call warm_up() for eager init
 """
 
 import logging
+import time
 from typing import Optional
 
 import chromadb
@@ -33,6 +39,11 @@ _chroma_collection = None
 _bm25_index: Optional[BM25Okapi] = None
 _bm25_corpus: list[dict] = []  # mirrors the ChromaDB docs for id mapping
 _cross_encoder: Optional[CrossEncoder] = None
+
+# Max characters of chunk text to send to cross-encoder (keeps inference fast)
+_RERANK_TEXT_LIMIT = 512
+# Hard cap on candidates sent to the cross-encoder
+_RERANK_CANDIDATE_CAP = 10
 
 
 def _get_collection():
@@ -81,6 +92,17 @@ def _get_cross_encoder() -> CrossEncoder:
         logger.info("Loading cross-encoder: %s", RERANKER_MODEL)
         _cross_encoder = CrossEncoder(RERANKER_MODEL)
     return _cross_encoder
+
+
+# ── Warm-up (call at app startup to front-load model downloads) ──────────────
+
+def warm_up():
+    """Eagerly load all models so first query doesn't pay download cost."""
+    t0 = time.time()
+    _get_collection()
+    _build_bm25_index()
+    _get_cross_encoder()
+    logger.info("Retriever warm-up complete in %.1fs", time.time() - t0)
 
 
 # ── Vector search ────────────────────────────────────────────────────────────
@@ -161,12 +183,19 @@ def _reciprocal_rank_fusion(
 # ── Cross-Encoder Reranking ─────────────────────────────────────────────────
 
 def _rerank(query: str, candidates: list[dict], final_k: int) -> list[dict]:
-    """Rerank candidates using a cross-encoder model."""
+    """
+    Rerank candidates using a cross-encoder model.
+    Text is truncated to _RERANK_TEXT_LIMIT chars to keep inference fast.
+    """
     if not candidates:
         return []
 
+    # Cap candidates to avoid slow inference
+    candidates = candidates[:_RERANK_CANDIDATE_CAP]
+
     encoder = _get_cross_encoder()
-    pairs = [[query, c["text"]] for c in candidates]
+    # Truncate text — cross-encoder only needs the first ~512 chars
+    pairs = [[query, c["text"][:_RERANK_TEXT_LIMIT]] for c in candidates]
     scores = encoder.predict(pairs)
 
     for candidate, score in zip(candidates, scores):
@@ -188,6 +217,7 @@ def retrieve_standards(
       vector search + BM25 → RRF fusion → cross-encoder rerank → top final_k.
     Returns list of dicts with keys: id, text, metadata, rerank_score.
     """
+    t0 = time.time()
     logger.info("Retrieving standards for: '%s'", query[:80])
 
     # 1. Parallel dense + sparse search
@@ -199,8 +229,12 @@ def retrieve_standards(
     fused = _reciprocal_rank_fusion(vec_hits, bm25_hits)
     logger.info("Fused candidates: %d", len(fused))
 
-    # 3. Cross-encoder reranking → final_k
-    top_results = _rerank(query, fused[: top_k * 2], final_k)
-    logger.info("Reranked results: %d", len(top_results))
+    # 3. Cross-encoder reranking → final_k (capped at _RERANK_CANDIDATE_CAP)
+    top_results = _rerank(query, fused, final_k)
+    logger.info(
+        "Reranked results: %d (retrieval took %.2fs)",
+        len(top_results),
+        time.time() - t0,
+    )
 
     return top_results

@@ -31,9 +31,9 @@ LLAMA_CLOUD_API_KEY = os.getenv("LLAMA_CLOUD_API_KEY", "")
 # ── Model IDs ────────────────────────────────────────────────────────────────
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
-RERANKER_MODEL = os.getenv("RERANKER_MODEL", "BAAI/bge-reranker-base")
+RERANKER_MODEL = os.getenv("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
 
 # ── Retrieval Hyper-parameters ───────────────────────────────────────────────
-VECTOR_TOP_K = int(os.getenv("VECTOR_TOP_K", "15"))
-BM25_TOP_K = int(os.getenv("BM25_TOP_K", "15"))
+VECTOR_TOP_K = int(os.getenv("VECTOR_TOP_K", "10"))
+BM25_TOP_K = int(os.getenv("BM25_TOP_K", "10"))
 RERANK_FINAL_K = int(os.getenv("RERANK_FINAL_K", "5"))
