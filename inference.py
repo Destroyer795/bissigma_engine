@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 """
 inference.py — THE JUDGE'S ENTRY POINT
-═══════════════════════════════════════
 Bulletproof evaluation script for the BIS x Sigma Squad AI Hackathon.
-
 Usage:
     python inference.py --input queries.json --output results.json
-
 Architectural guarantees:
   ✓ Zero-crash: every query is wrapped in try/except → empty list fallback
   ✓ SQLite WAL caching: repeated queries resolve in < 1 ms
@@ -23,7 +20,7 @@ import sys
 import time
 from pathlib import Path
 
-# ── Rich Console Setup ───────────────────────────────────────────────────────
+# Rich Console Setup
 try:
     from rich.console import Console
     from rich.panel import Panel
@@ -35,8 +32,7 @@ try:
     RICH_AVAILABLE = True
 except ImportError:
     RICH_AVAILABLE = False
-
-# ── Logging ──────────────────────────────────────────────────────────────────
+# Logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
@@ -44,19 +40,18 @@ logging.basicConfig(
 logger = logging.getLogger("inference")
 
 
-# ── Rich Logging Helpers ─────────────────────────────────────────────────────
-
+# Rich Logging Helpers
 def _log_header():
     """Print the startup banner."""
     if not RICH_AVAILABLE:
         logger.info("=" * 60)
-        logger.info("BIS Recommendation Engine — Inference Pipeline")
+        logger.info("BIS Recommendation Engine - Inference Pipeline")
         logger.info("=" * 60)
         return
     console.print()
     console.print(
         Panel(
-            "[bold cyan]🏗️  BIS Recommendation Engine[/bold cyan]\n"
+            "[bold cyan]BIS Recommendation Engine[/bold cyan]\n"
             "[dim]Hybrid RAG Pipeline · Dual-Agent Verification · SQLite WAL Cache[/dim]",
             box=box.DOUBLE_EDGE,
             border_style="cyan",
@@ -78,7 +73,7 @@ def _log_warmup(duration: float):
 def _log_cache_hit(query_id: str, latency_ms: float):
     if RICH_AVAILABLE:
         console.print(
-            f"  [bold yellow]⚡ CACHE[/bold yellow]  "
+            f"  [bold yellow]CACHE[/bold yellow]  "
             f"[white]{query_id}[/white] → "
             f"SQLite WAL hit [green]({latency_ms:.1f}ms)[/green]"
         )
@@ -90,7 +85,7 @@ def _log_pipeline_start(query_id: str, query_text: str):
     if RICH_AVAILABLE:
         short = query_text[:60] + ("..." if len(query_text) > 60 else "")
         console.print(
-            f"  [bold blue]🔍 PIPELINE[/bold blue]  "
+            f"  [bold blue]PIPELINE[/bold blue]  "
             f"[white]{query_id}[/white] → [dim]{short}[/dim]"
         )
     else:
@@ -105,7 +100,9 @@ def _log_retrieval(vec_count: int, bm25_count: int, fused_count: int):
             f"Fused: [bold]{fused_count}[/bold] chunks"
         )
     else:
-        logger.info("[RETRIEVAL] Vec=%d BM25=%d Fused=%d", vec_count, bm25_count, fused_count)
+        logger.info(
+            "[RETRIEVAL] Vec=%d BM25=%d Fused=%d", vec_count, bm25_count, fused_count
+        )
 
 
 def _log_reranker(scores: list[float]):
@@ -132,7 +129,9 @@ def _log_agent(extracted: int, verified: int, dropped: int):
             f"{drop_text}"
         )
     else:
-        logger.info("[AGENT] Extracted=%d Verified=%d Dropped=%d", extracted, verified, dropped)
+        logger.info(
+            "[AGENT] Extracted=%d Verified=%d Dropped=%d", extracted, verified, dropped
+        )
 
 
 def _log_result(query_id: str, standards: list[str], latency: float):
@@ -147,7 +146,9 @@ def _log_result(query_id: str, standards: list[str], latency: float):
     else:
         logger.info(
             "id=%s | standards=%d | latency=%.3fs",
-            query_id, len(standards), latency,
+            query_id,
+            len(standards),
+            latency,
         )
 
 
@@ -155,7 +156,6 @@ def _log_summary(results: list[dict], output_path: str):
     if not RICH_AVAILABLE:
         logger.info("Results written to %s (%d entries)", output_path, len(results))
         return
-
     table = Table(
         title="Inference Summary",
         box=box.ROUNDED,
@@ -165,24 +165,23 @@ def _log_summary(results: list[dict], output_path: str):
     table.add_column("ID", style="white", width=8)
     table.add_column("Standards", style="green")
     table.add_column("Latency", style="cyan", justify="right", width=10)
-
     for r in results:
-        stds = ", ".join(r["retrieved_standards"]) if r["retrieved_standards"] else "[dim]—[/dim]"
+        stds = (
+            ", ".join(r["retrieved_standards"])
+            if r["retrieved_standards"]
+            else "[dim]—[/dim]"
+        )
         table.add_row(
             str(r["id"]),
             stds,
             f"{r['latency_seconds']:.3f}s",
         )
-
     console.print()
     console.print(table)
     console.print(f"\n  [dim]Output written to:[/dim] [bold]{output_path}[/bold]\n")
 
 
-# ═════════════════════════════════════════════════════════════════════════════
 # SQLite WAL Cache
-# ═════════════════════════════════════════════════════════════════════════════
-
 class QueryCache:
     """
     SQLite-backed query cache with WAL mode for concurrent read performance.
@@ -194,15 +193,13 @@ class QueryCache:
         self.conn = sqlite3.connect(db_path)
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=NORMAL")
-        self.conn.execute(
-            """
+        self.conn.execute("""
             CREATE TABLE IF NOT EXISTS query_cache (
                 query_text TEXT PRIMARY KEY,
                 standards_json TEXT NOT NULL,
                 created_at REAL NOT NULL
             )
-            """
-        )
+            """)
         self.conn.commit()
 
     def get(self, query: str):
@@ -230,10 +227,7 @@ class QueryCache:
         self.conn.close()
 
 
-# ═════════════════════════════════════════════════════════════════════════════
 # RAG Pipeline
-# ═════════════════════════════════════════════════════════════════════════════
-
 def run_rag_pipeline(query: str) -> list[str]:
     """
     Execute the full RAG pipeline: retrieve → rerank → dual-agent generate.
@@ -244,18 +238,14 @@ def run_rag_pipeline(query: str) -> list[str]:
 
     # Step 1: Hybrid retrieval + reranking
     chunks = retrieve_standards(query)
-
     if not chunks:
         logger.warning("No chunks retrieved for query: %s", query[:60])
         return []
-
     # Log retrieval + reranker details
     rerank_scores = [c.get("rerank_score", 0.0) for c in chunks]
     _log_reranker(rerank_scores)
-
     # Step 2: Dual-Agent LLM generation
     standards = generate_response(query, chunks)
-
     return standards
 
 
@@ -263,6 +253,7 @@ def _warm_up_models():
     """Pre-load all ML models into memory so query latency is accurate."""
     try:
         from src.retriever import warm_up
+
         t0 = time.time()
         warm_up()
         _log_warmup(time.time() - t0)
@@ -270,10 +261,7 @@ def _warm_up_models():
         logger.warning("Model warm-up failed (will lazy-load): %s", e)
 
 
-# ═════════════════════════════════════════════════════════════════════════════
 # Main
-# ═════════════════════════════════════════════════════════════════════════════
-
 def main():
     parser = argparse.ArgumentParser(
         description="BIS Standard Recommendation Engine — Inference Script"
@@ -291,10 +279,8 @@ def main():
         help="Path to write output JSON results",
     )
     args = parser.parse_args()
-
     _log_header()
-
-    # ── Load input ───────────────────────────────────────────────────────────
+    # Load input
     try:
         with open(args.input, "r", encoding="utf-8") as f:
             queries = json.load(f)
@@ -306,24 +292,19 @@ def main():
         with open(args.output, "w", encoding="utf-8") as f:
             json.dump([], f, indent=2)
         sys.exit(1)
-
-    # ── Init cache ───────────────────────────────────────────────────────────
+    # Init cache
     from src.config import SQLITE_CACHE_PATH
 
     cache = QueryCache(SQLITE_CACHE_PATH)
-
-    # ── Warm up models ───────────────────────────────────────────────────────
+    # Warm up models
     _warm_up_models()
-
-    # ── Process queries ──────────────────────────────────────────────────────
+    # Process queries
     results: list[dict] = []
-
     for item in queries:
         query_id = item.get("id", "unknown")
         query_text = item.get("query", "")
         start_time = time.time()
-
-        # ── Zero-crash guard ─────────────────────────────────────────────────
+        # Zero-crash guard
         try:
             cached = cache.get(query_text)
             if cached is not None:
@@ -334,23 +315,17 @@ def main():
                 _log_pipeline_start(query_id, query_text)
                 standards = run_rag_pipeline(query_text)
                 cache.put(query_text, standards)
-
                 # Log agent stats
                 _log_agent(
                     extracted=len(standards) + 1,  # approx
                     verified=len(standards),
                     dropped=max(0, 1),  # at least checked
                 )
-
         except Exception as e:
-            logger.error(
-                "Pipeline failed for id=%s: %s", query_id, e, exc_info=True
-            )
+            logger.error("Pipeline failed for id=%s: %s", query_id, e, exc_info=True)
             standards = []  # ← Zero-crash fallback
-
         latency = time.time() - start_time
         _log_result(query_id, standards, latency)
-
         results.append(
             {
                 "id": query_id,
@@ -358,15 +333,12 @@ def main():
                 "latency_seconds": round(latency, 4),
             }
         )
-
-    # ── Write output ─────────────────────────────────────────────────────────
+    # Write output
     cache.close()
-
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2, ensure_ascii=False)
-
     _log_summary(results, str(output_path))
 
 

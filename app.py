@@ -1,6 +1,5 @@
 """
 app.py — Enterprise BIS Compliance Tool (Streamlit UI)
-═══════════════════════════════════════════════════════
 Sleek B2B internal compliance tool for BIS standard recommendations.
 Features: system health sidebar, confidence badges, latency metrics.
 """
@@ -8,38 +7,31 @@ Features: system health sidebar, confidence badges, latency metrics.
 import json
 import logging
 import time
-
 import streamlit as st
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("app")
-
-# ── Page Config ──────────────────────────────────────────────────────────────
+# Page Config
 st.set_page_config(
     page_title="BIS Compliance Engine",
     page_icon="🏗️",
     layout="wide",
     initial_sidebar_state="expanded",
 )
-
-# ── Custom CSS ───────────────────────────────────────────────────────────────
+# Custom CSS
 st.markdown(
     """
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
     * { font-family: 'Inter', sans-serif; }
-
     .stApp {
         background: #0a0e1a;
     }
-
     /* Sidebar */
     section[data-testid="stSidebar"] {
         background: #0d1117 !important;
         border-right: 1px solid rgba(56, 189, 248, 0.08);
     }
-
     .sidebar-header {
         font-size: 0.7rem;
         font-weight: 600;
@@ -49,7 +41,6 @@ st.markdown(
         margin-top: 1.5rem;
         margin-bottom: 0.5rem;
     }
-
     .health-row {
         display: flex;
         justify-content: space-between;
@@ -69,12 +60,10 @@ st.markdown(
     }
     .dot-green { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
     .dot-blue { background: #3b82f6; box-shadow: 0 0 6px #3b82f6; }
-
     @keyframes pulse {
         0%, 100% { opacity: 1; }
         50% { opacity: 0.5; }
     }
-
     /* Main Content */
     .main-title {
         font-size: 1.8rem;
@@ -87,7 +76,6 @@ st.markdown(
         color: #64748b;
         margin-bottom: 2rem;
     }
-
     /* Result cards */
     .result-container {
         background: linear-gradient(135deg, rgba(15,23,42,0.9), rgba(30,41,59,0.6));
@@ -101,7 +89,6 @@ st.markdown(
     .result-container:hover {
         border-color: rgba(56, 189, 248, 0.25);
     }
-
     .std-header {
         display: flex;
         justify-content: space-between;
@@ -113,7 +100,6 @@ st.markdown(
         font-weight: 600;
         color: #f1f5f9;
     }
-
     .badge {
         display: inline-flex;
         align-items: center;
@@ -148,21 +134,18 @@ st.markdown(
         color: #a855f7;
         border: 1px solid rgba(168, 85, 247, 0.2);
     }
-
     .std-rationale {
         color: #94a3b8;
         font-size: 0.88rem;
         line-height: 1.5;
         margin-top: 0.3rem;
     }
-
     .metrics-bar {
         display: flex;
         gap: 0.8rem;
         margin: 1rem 0;
         flex-wrap: wrap;
     }
-
     .metric-card {
         background: rgba(255,255,255,0.03);
         border: 1px solid rgba(255,255,255,0.06);
@@ -184,7 +167,6 @@ st.markdown(
         letter-spacing: 0.05em;
         margin-top: 0.2rem;
     }
-
     /* Input styling */
     div[data-testid="stTextArea"] textarea {
         background: rgba(255, 255, 255, 0.03) !important;
@@ -198,7 +180,6 @@ st.markdown(
         border-color: rgba(56, 189, 248, 0.3) !important;
         box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.08) !important;
     }
-
     .stButton > button {
         background: linear-gradient(135deg, #1e40af, #3b82f6) !important;
         color: white !important;
@@ -214,13 +195,11 @@ st.markdown(
         transform: translateY(-1px) !important;
         box-shadow: 0 4px 16px rgba(59, 130, 246, 0.3) !important;
     }
-
     .divider {
         height: 1px;
         background: rgba(255,255,255,0.06);
         margin: 1.5rem 0;
     }
-
     .footer {
         text-align: center;
         color: #334155;
@@ -233,12 +212,10 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-
-# ── Sidebar: System Health ───────────────────────────────────────────────────
+# Sidebar: System Health
 with st.sidebar:
     st.markdown("### 🏗️ BIS Engine")
     st.markdown('<p class="sidebar-header">System Health</p>', unsafe_allow_html=True)
-
     health_items = [
         ("SQLite Cache", "Active (WAL)", "green"),
         ("Vector Store", "ChromaDB", "green"),
@@ -247,19 +224,19 @@ with st.sidebar:
         ("Generation", "Groq Llama-3", "blue"),
         ("Architecture", "Dual-Agent", "blue"),
     ]
-
     for label, value, color in health_items:
         st.markdown(
             f'<div class="health-row">'
             f'<span class="health-label">{label}</span>'
             f'<span class="health-value">'
             f'<span class="health-dot dot-{color}"></span>{value}</span>'
-            f'</div>',
+            f"</div>",
             unsafe_allow_html=True,
         )
-
-    st.markdown('<p class="sidebar-header" style="margin-top:2rem">Pipeline Config</p>', unsafe_allow_html=True)
-
+    st.markdown(
+        '<p class="sidebar-header" style="margin-top:2rem">Pipeline Config</p>',
+        unsafe_allow_html=True,
+    )
     config_items = [
         ("Embedding", "all-MiniLM-L6-v2"),
         ("Hybrid Search", "Vector + BM25"),
@@ -272,26 +249,23 @@ with st.sidebar:
             f'<div class="health-row">'
             f'<span class="health-label">{label}</span>'
             f'<span class="health-value">{value}</span>'
-            f'</div>',
+            f"</div>",
             unsafe_allow_html=True,
         )
-
     st.markdown("---")
     st.markdown(
         '<p style="color:#334155;font-size:0.75rem;text-align:center">'
-        'BIS x Sigma Squad · v2.0</p>',
+        "BIS x Sigma Squad · v2.0</p>",
         unsafe_allow_html=True,
     )
-
-# ── Main Content ─────────────────────────────────────────────────────────────
+# Main Content
 st.markdown(
     '<p class="main-title">BIS Standard Compliance Engine</p>'
     '<p class="main-subtitle">'
-    'Enter a building material description to identify applicable '
-    'Bureau of Indian Standards (SP 21:2005)</p>',
+    "Enter a building material description to identify applicable "
+    "Bureau of Indian Standards (SP 21:2005)</p>",
     unsafe_allow_html=True,
 )
-
 query = st.text_area(
     "Material or product description:",
     placeholder="e.g. Portland pozzolana cement for reinforced concrete construction...",
@@ -299,16 +273,13 @@ query = st.text_area(
     key="query_input",
     label_visibility="collapsed",
 )
-
 col1, col2, col3 = st.columns([1, 1.5, 1])
 with col2:
     search_clicked = st.button("Analyze Compliance →", use_container_width=True)
-
-# ── Processing ───────────────────────────────────────────────────────────────
+# Processing
 if search_clicked and query.strip():
     with st.spinner("Running dual-agent RAG pipeline..."):
         start = time.time()
-
         try:
             from src.retriever import retrieve_standards
             from src.generator import generate_response_detailed
@@ -316,12 +287,10 @@ if search_clicked and query.strip():
             chunks = retrieve_standards(query.strip())
             report = generate_response_detailed(query.strip(), chunks)
             latency = time.time() - start
-
             verified = report.get("verified", [])
             dropped = report.get("dropped", [])
             extractor_count = report.get("extractor_count", 0)
             verifier_count = report.get("verifier_count", 0)
-
             if verified:
                 # Metrics bar
                 avg_conf = sum(v.get("confidence", 0) for v in verified) / len(verified)
@@ -350,18 +319,14 @@ if search_clicked and query.strip():
                 </div>
                 """
                 st.markdown(metrics_html, unsafe_allow_html=True)
-
                 st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
-
                 # Standard cards
                 for item in verified:
                     std_id = item.get("id", "N/A")
                     rationale = item.get("rationale", "No rationale provided")
                     confidence = item.get("confidence", 0.85)
-
                     conf_class = "badge-high" if confidence >= 0.8 else "badge-medium"
                     conf_pct = f"{confidence:.0%}"
-
                     st.markdown(
                         f"""
                         <div class="result-container">
@@ -381,7 +346,6 @@ if search_clicked and query.strip():
                         """,
                         unsafe_allow_html=True,
                     )
-
                 # Agent trace
                 if dropped:
                     with st.expander("🛡️ Agent Verification Log", expanded=False):
@@ -392,39 +356,36 @@ if search_clicked and query.strip():
                                     f"- ~~{d.get('id', 'N/A')}~~ — "
                                     f"*{d.get('reason', 'Failed verification')}*"
                                 )
-
                 # Raw JSON
                 with st.expander("📄 Raw JSON Output", expanded=False):
-                    st.json({
-                        "query": query.strip(),
-                        "retrieved_standards": [v["id"] for v in verified],
-                        "latency_seconds": round(latency, 4),
-                        "agent_report": {
-                            "extractor_candidates": extractor_count,
-                            "verified_count": verifier_count,
-                            "dropped_count": len(dropped),
-                        },
-                    })
-
+                    st.json(
+                        {
+                            "query": query.strip(),
+                            "retrieved_standards": [v["id"] for v in verified],
+                            "latency_seconds": round(latency, 4),
+                            "agent_report": {
+                                "extractor_candidates": extractor_count,
+                                "verified_count": verifier_count,
+                                "dropped_count": len(dropped),
+                            },
+                        }
+                    )
             else:
                 st.warning(
                     "No applicable standards found in the SP 21:2005 database for this query."
                 )
-
         except Exception as e:
             latency = time.time() - start
             st.error(f"Pipeline error: {e}")
             logger.error("Pipeline error: %s", e, exc_info=True)
-
 elif search_clicked:
     st.warning("Please enter a material description.")
-
-# ── Footer ───────────────────────────────────────────────────────────────────
+# Footer
 st.markdown(
     '<div class="footer">'
-    'BIS x Sigma Squad AI Hackathon · '
-    'Hybrid RAG: ChromaDB + BM25 + Cross-Encoder · '
-    'Dual-Agent Verification · Groq Llama-3'
-    '</div>',
+    "BIS x Sigma Squad AI Hackathon · "
+    "Hybrid RAG: ChromaDB + BM25 + Cross-Encoder · "
+    "Dual-Agent Verification · Groq Llama-3"
+    "</div>",
     unsafe_allow_html=True,
 )
