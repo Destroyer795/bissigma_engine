@@ -214,7 +214,7 @@ st.markdown(
 )
 # Sidebar: System Health
 with st.sidebar:
-    st.markdown("### 🏗️ BIS Engine")
+    st.markdown("### BIS Engine")
     st.markdown('<p class="sidebar-header">System Health</p>', unsafe_allow_html=True)
     health_items = [
         ("SQLite Cache", "Active (WAL)", "green"),

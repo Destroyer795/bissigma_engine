@@ -12,6 +12,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from src.config import SQLITE_CACHE_PATH
+from inference import QueryCache
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
@@ -23,6 +26,9 @@ app = FastAPI(
     description="AI-powered Bureau of Indian Standards recommendation API using Hybrid RAG",
     version="1.0.0",
 )
+
+# Initialize cache globally
+query_cache = QueryCache(SQLITE_CACHE_PATH)
 
 app.add_middleware(
     CORSMiddleware,
@@ -78,11 +84,27 @@ async def recommend_standards(req: RecommendRequest):
     start = time.time()
 
     try:
+        # 1. Check cache first
+        cached = query_cache.get(req.query)
+        if cached is not None:
+            latency = time.time() - start
+            return RecommendResponse(
+                query=req.query,
+                retrieved_standards=cached,
+                latency_seconds=round(latency, 4),
+                num_context_chunks=0,
+            )
+
+        # 2. Run full pipeline on miss
         from src.retriever import retrieve_standards
         from src.generator import generate_response
 
         chunks = retrieve_standards(req.query, final_k=req.top_k)
         standards = generate_response(req.query, chunks)
+        
+        # 3. Store in cache
+        query_cache.put(req.query, standards)
+        
         latency = time.time() - start
 
         return RecommendResponse(
