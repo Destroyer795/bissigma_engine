@@ -1,23 +1,27 @@
 """
-src/retriever.py
-Hybrid retrieval pipeline:
-  1. Dense vector search   → ChromaDB (cosine similarity)
-  2. Sparse keyword search → BM25 over the full corpus
+src/retriever.py - Hybrid retrieval pipeline.
+
+Steps:
+  1. Dense vector search via ChromaDB (cosine similarity)
+  2. Sparse keyword search via BM25 over the full corpus
   3. Reciprocal Rank Fusion to merge both result sets
-  4. Cross-Encoder reranking (ms-marco-MiniLM-L-6-v2) → final top-k
+  4. Cross-Encoder reranking (ms-marco-MiniLM-L-6-v2) to produce final top-k
+
 Performance notes:
-  - Cross-encoder text is truncated to 512 chars (model max ~512 tokens)
-  - Rerank candidate cap of 10 keeps inference under 1s on CPU
-  - Models are lazy-loaded singletons; call warm_up() for eager init
+  - Cross-encoder input is truncated to 512 chars (model context limit)
+  - Rerank candidate cap of 10 keeps CPU inference under 1s
+  - Models are lazy-loaded singletons; call warm_up() for eager initialisation
 """
 
 import logging
 import time
 from typing import Optional
+
 import chromadb
 from chromadb.utils import embedding_functions
 from rank_bm25 import BM25Okapi
 from sentence_transformers import CrossEncoder
+
 from src.config import (
     BM25_TOP_K,
     CHROMA_COLLECTION,
@@ -29,19 +33,18 @@ from src.config import (
 )
 
 logger = logging.getLogger(__name__)
-# Lazy-loaded singletons
+
 _chroma_collection = None
 _bm25_index: Optional[BM25Okapi] = None
-_bm25_corpus: list[dict] = []  # mirrors the ChromaDB docs for id mapping
+_bm25_corpus: list[dict] = []
 _cross_encoder: Optional[CrossEncoder] = None
-# Max characters of chunk text to send to cross-encoder (keeps inference fast)
+
 _RERANK_TEXT_LIMIT = 512
-# Hard cap on candidates sent to the cross-encoder
 _RERANK_CANDIDATE_CAP = 10
 
 
 def _get_collection():
-    """Return the ChromaDB collection (lazy-init)."""
+    """Return the ChromaDB collection, initialising it on first call."""
     global _chroma_collection
     if _chroma_collection is None:
         ef = embedding_functions.SentenceTransformerEmbeddingFunction(
@@ -62,7 +65,7 @@ def _get_collection():
 
 
 def _build_bm25_index():
-    """Build a BM25 index from the ChromaDB corpus (one-time)."""
+    """Build a BM25 index from the ChromaDB corpus (runs once per session)."""
     global _bm25_index, _bm25_corpus
     col = _get_collection()
     results = col.get(include=["documents", "metadatas"])
@@ -78,7 +81,7 @@ def _build_bm25_index():
 
 
 def _get_cross_encoder() -> CrossEncoder:
-    """Lazy-load the cross-encoder reranker."""
+    """Lazy-load the cross-encoder reranker model."""
     global _cross_encoder
     if _cross_encoder is None:
         logger.info("Loading cross-encoder: %s", RERANKER_MODEL)
@@ -86,9 +89,8 @@ def _get_cross_encoder() -> CrossEncoder:
     return _cross_encoder
 
 
-# Warm-up (call at app startup to front-load model downloads)
 def warm_up():
-    """Eagerly load all models so first query doesn't pay download cost."""
+    """Eagerly initialise all models so the first query does not pay load cost."""
     t0 = time.time()
     _get_collection()
     _build_bm25_index()
@@ -96,7 +98,6 @@ def warm_up():
     logger.info("Retriever warm-up complete in %.1fs", time.time() - t0)
 
 
-# Vector search
 def _vector_search(query: str, top_k: int = VECTOR_TOP_K) -> list[dict]:
     """Dense retrieval via ChromaDB cosine similarity."""
     col = _get_collection()
@@ -113,14 +114,13 @@ def _vector_search(query: str, top_k: int = VECTOR_TOP_K) -> list[dict]:
                 "id": doc_id,
                 "text": doc,
                 "metadata": meta,
-                "score": 1.0 - dist,  # cosine distance → similarity
+                "score": 1.0 - dist,  # cosine distance to similarity
                 "source": "vector",
             }
         )
     return hits
 
 
-# BM25 search
 def _bm25_search(query: str, top_k: int = BM25_TOP_K) -> list[dict]:
     """Sparse keyword retrieval via BM25."""
     if _bm25_index is None:
@@ -141,33 +141,28 @@ def _bm25_search(query: str, top_k: int = BM25_TOP_K) -> list[dict]:
     ]
 
 
-# Reciprocal Rank Fusion
 def _reciprocal_rank_fusion(*result_lists: list[dict], k: int = 60) -> list[dict]:
-    """Merge multiple ranked lists using RRF."""
+    """Merge multiple ranked lists using Reciprocal Rank Fusion."""
     rrf_scores: dict[str, float] = {}
     doc_map: dict[str, dict] = {}
     for result_list in result_lists:
         for rank, hit in enumerate(result_list):
             doc_id = hit["id"]
             rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + 1.0 / (k + rank + 1)
-            doc_map[doc_id] = hit  # keep latest metadata
-    # Sort by fused score descending
+            doc_map[doc_id] = hit
     fused = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)
     return [{**doc_map[doc_id], "rrf_score": score} for doc_id, score in fused]
 
 
-# Cross-Encoder Reranking
 def _rerank(query: str, candidates: list[dict], final_k: int) -> list[dict]:
     """
-    Rerank candidates using a cross-encoder model.
-    Text is truncated to _RERANK_TEXT_LIMIT chars to keep inference fast.
+    Rerank candidates using the cross-encoder model.
+    Input text is truncated to _RERANK_TEXT_LIMIT chars to keep CPU inference fast.
     """
     if not candidates:
         return []
-    # Cap candidates to avoid slow inference
     candidates = candidates[:_RERANK_CANDIDATE_CAP]
     encoder = _get_cross_encoder()
-    # Truncate text — cross-encoder only needs the first ~512 chars
     pairs = [[query, c["text"][:_RERANK_TEXT_LIMIT]] for c in candidates]
     scores = encoder.predict(pairs)
     for candidate, score in zip(candidates, scores):
@@ -176,27 +171,27 @@ def _rerank(query: str, candidates: list[dict], final_k: int) -> list[dict]:
     return reranked[:final_k]
 
 
-# Public API
 def retrieve_standards(
     query: str,
     top_k: int = VECTOR_TOP_K,
     final_k: int = RERANK_FINAL_K,
 ) -> list[dict]:
     """
-    Full hybrid retrieval pipeline:
-      vector search + BM25 → RRF fusion → cross-encoder rerank → top final_k.
-    Returns list of dicts with keys: id, text, metadata, rerank_score.
+    Full hybrid retrieval pipeline: vector + BM25 retrieval, RRF fusion,
+    cross-encoder reranking, returning the top final_k results.
+
+    Each result is a dict with keys: id, text, metadata, rerank_score.
     """
     t0 = time.time()
     logger.info("Retrieving standards for: '%s'", query[:80])
-    # 1. Parallel dense + sparse search
+
     vec_hits = _vector_search(query, top_k=top_k)
     bm25_hits = _bm25_search(query, top_k=top_k)
     logger.info("Vector hits: %d | BM25 hits: %d", len(vec_hits), len(bm25_hits))
-    # 2. Reciprocal rank fusion
+
     fused = _reciprocal_rank_fusion(vec_hits, bm25_hits)
     logger.info("Fused candidates: %d", len(fused))
-    # 3. Cross-encoder reranking → final_k (capped at _RERANK_CANDIDATE_CAP)
+
     top_results = _rerank(query, fused, final_k)
     logger.info(
         "Reranked results: %d (retrieval took %.2fs)",

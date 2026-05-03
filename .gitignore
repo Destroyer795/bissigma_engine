@@ -1,4 +1,4 @@
-# ── Python ──────────────────────────────────────────────
+# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -6,22 +6,22 @@ dist/
 build/
 *.egg
 
-# ── Environment ─────────────────────────────────────────
+# Virtual environments
 .env
 venv/
 .venv/
 
-# ── Data artifacts ──────────────────────────────────────
+# Data artifacts (too large for version control)
 data/chromadb/
 data/cache.db
 data/*.pdf
 
-# ── IDE ─────────────────────────────────────────────────
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# ── OS ──────────────────────────────────────────────────
+# OS
 .DS_Store
 Thumbs.db

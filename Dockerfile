@@ -1,28 +1,32 @@
-# Dockerfile — BIS Recommendation Engine (Local Development)
+# BIS Recommendation Engine
 FROM python:3.11-slim
+
 LABEL maintainer="Sigma Squad"
 LABEL description="AI-powered BIS Standard Recommendation Engine"
-# System dependencies
+
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     sqlite3 \
     && rm -rf /var/lib/apt/lists/*
-# Working directory
+
 WORKDIR /app
-# Install Python dependencies (cached layer)
+
+# Install Python dependencies as a cached layer
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
-# Copy application code
+
 COPY . .
-# Create data directory
+
 RUN mkdir -p /app/data/chromadb
-# Pre-download ML models (baked into image for fast cold-start)
+
+# Pre-download ML models at build time for faster container cold-start
 RUN python -c "from sentence_transformers import SentenceTransformer, CrossEncoder; \
     SentenceTransformer('all-MiniLM-L6-v2'); \
     CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')"
-# Expose ports
+
 # FastAPI: 8000 | Streamlit: 8501
 EXPOSE 8000 8501
-# Default: run FastAPI backend
+
 CMD ["uvicorn", "app_api:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

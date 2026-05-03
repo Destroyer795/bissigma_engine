@@ -1,13 +1,9 @@
-# ═══════════════════════════════════════════════════════════════════════════
-# docker-compose.yml — Local Development Stack
-# ═══════════════════════════════════════════════════════════════════════════
-# Usage:
-#   docker-compose up --build
+# Local development stack
+# Usage: docker-compose up --build
 #
 # Services:
-#   backend   → FastAPI API on http://localhost:8000
-#   frontend  → Streamlit UI on http://localhost:8501
-# ═══════════════════════════════════════════════════════════════════════════
+#   backend   - FastAPI API on http://localhost:8000
+#   frontend  - Streamlit UI on http://localhost:8501
 
 services:
   backend:

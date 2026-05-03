@@ -1,6 +1,7 @@
 """
-src/ingest.py
-Data ingestion pipeline:
+src/ingest.py - Data ingestion pipeline.
+
+Steps:
   1. Parse the BIS dataset PDF via LlamaParse (markdown mode).
   2. Regex-chunk the markdown at every "SUMMARY OF IS" boundary.
   3. Extract standard IDs (e.g. "IS 269: 1989") into metadata.
@@ -23,10 +24,11 @@ from src.config import (
 )
 
 logger = logging.getLogger(__name__)
-# Regex patterns
-# Splits on the literal "SUMMARY OF IS" header boundary
+
+# Splits at each "SUMMARY OF IS" header to produce one chunk per standard
 CHUNK_SPLIT_PATTERN = re.compile(r"(?=SUMMARY\s+OF\s+IS\s+)", re.IGNORECASE)
-# Extracts a standard ID like "IS 269 : 1989" or "IS 269:1989" or "IS 269"
+
+# Extracts a standard ID such as "IS 269 : 1989", "IS 269:1989", or "IS 269"
 STANDARD_ID_PATTERN = re.compile(r"IS\s+(\d{1,5})\s*(?::\s*(\d{4}))?", re.IGNORECASE)
 
 
@@ -132,8 +134,7 @@ def run_ingestion(pdf_path: Optional[str] = None) -> int:
     return len(chunks)
 
 
-# CLI entrypoint
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(message)s")
     count = run_ingestion()
-    print(f"\n✅ Ingestion complete — {count} standard chunks indexed.")
+    print(f"\nIngestion complete: {count} standard chunks indexed.")

@@ -1,8 +1,7 @@
 """
-app_api.py — FastAPI Microservice Backend
-══════════════════════════════════════════
-MCP-aligned agentic microservice for BIS standard recommendations.
-Provides REST endpoints for the recommendation pipeline.
+app_api.py - FastAPI microservice backend for the BIS Recommendation Engine.
+
+Exposes REST endpoints for the hybrid RAG recommendation pipeline.
 """
 
 import logging
@@ -19,7 +18,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("api")
 
-# ── FastAPI App ──────────────────────────────────────────────────────────────
 app = FastAPI(
     title="BIS Recommendation Engine",
     description="AI-powered Bureau of Indian Standards recommendation API using Hybrid RAG",
@@ -35,11 +33,11 @@ app.add_middleware(
 )
 
 
-# ── Schemas ──────────────────────────────────────────────────────────────────
-
 class RecommendRequest(BaseModel):
     query: str = Field(..., min_length=3, description="Product/material description")
-    top_k: int = Field(default=5, ge=1, le=10, description="Number of standards to return")
+    top_k: int = Field(
+        default=5, ge=1, le=10, description="Number of standards to return"
+    )
 
 
 class RecommendResponse(BaseModel):
@@ -64,8 +62,6 @@ class HealthResponse(BaseModel):
     version: str
 
 
-# ── Endpoints ────────────────────────────────────────────────────────────────
-
 @app.get("/health", response_model=HealthResponse, tags=["System"])
 async def health_check():
     """Health check endpoint for Docker and load balancers."""
@@ -76,7 +72,8 @@ async def health_check():
 async def recommend_standards(req: RecommendRequest):
     """
     Primary recommendation endpoint.
-    Runs the hybrid RAG pipeline: vector + BM25 → rerank → LLM generation.
+    Runs the hybrid RAG pipeline: vector + BM25 retrieval, cross-encoder reranking,
+    and dual-agent LLM generation.
     """
     start = time.time()
 
@@ -103,7 +100,8 @@ async def recommend_standards(req: RecommendRequest):
 @app.post("/ingest", response_model=IngestResponse, tags=["Data"])
 async def ingest_data(req: IngestRequest):
     """
-    Trigger data ingestion: parse PDF → regex chunk → embed → store.
+    Trigger data ingestion: parse PDF, regex chunk at IS boundaries,
+    embed with sentence-transformers, and persist to ChromaDB.
     """
     try:
         from src.ingest import run_ingestion
