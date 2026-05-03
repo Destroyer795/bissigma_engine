@@ -283,9 +283,20 @@ if search_clicked and query.strip():
         try:
             from src.retriever import retrieve_standards
             from src.generator import generate_response_detailed
+            from inference import QueryCache
+            from src.config import SQLITE_CACHE_PATH
 
-            chunks = retrieve_standards(query.strip())
-            report = generate_response_detailed(query.strip(), chunks)
+            cache = QueryCache(SQLITE_CACHE_PATH)
+            cached_report = cache.get(query.strip())
+
+            if cached_report is not None:
+                report = cached_report
+                chunks = []
+            else:
+                chunks = retrieve_standards(query.strip())
+                report = generate_response_detailed(query.strip(), chunks)
+                cache.put(query.strip(), report)
+
             latency = time.time() - start
             verified = report.get("verified", [])
             dropped = report.get("dropped", [])

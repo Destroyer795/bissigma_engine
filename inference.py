@@ -196,35 +196,73 @@ class QueryCache:
         )
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=NORMAL")
+        try:
+            self.conn.execute("SELECT rationales FROM query_cache LIMIT 1")
+        except sqlite3.OperationalError:
+            self.conn.execute("DROP TABLE IF EXISTS query_cache")
         self.conn.execute("""
             CREATE TABLE IF NOT EXISTS query_cache (
                 query_text TEXT PRIMARY KEY,
-                standards_json TEXT NOT NULL,
+                retrieved_standards TEXT NOT NULL,
+                rationales TEXT NOT NULL,
+                confidence_scores TEXT NOT NULL,
                 created_at REAL NOT NULL
             )
             """)
         self.conn.commit()
 
     def get(self, query: str):
-        """Return cached standards list or None."""
+        """Return cached detailed report or None."""
         norm_query = query.strip().lower()
         row = self.conn.execute(
-            "SELECT standards_json FROM query_cache WHERE query_text = ?",
+            "SELECT retrieved_standards, rationales, confidence_scores FROM query_cache WHERE query_text = ?",
             (norm_query,),
         ).fetchone()
         if row:
-            return json.loads(row[0])
+            stds = json.loads(row[0])
+            rats = json.loads(row[1])
+            confs = json.loads(row[2])
+
+            verified = []
+            for i, std in enumerate(stds):
+                verified.append(
+                    {
+                        "id": std,
+                        "rationale": rats[i] if i < len(rats) else "N/A",
+                        "confidence": confs[i] if i < len(confs) else 0.85,
+                    }
+                )
+
+            return {
+                "verified": verified,
+                "dropped": [],
+                "extractor_count": len(verified),
+                "verifier_count": len(verified),
+            }
         return None
 
-    def put(self, query: str, standards: list[str]):
-        """Insert or replace a query result in the cache."""
+    def put(self, query: str, report: dict):
+        """Insert or replace a rich query result in the cache."""
         norm_query = query.strip().lower()
+
+        verified = report.get("verified", [])
+        stds = [v.get("id", "") for v in verified if v.get("id")]
+        rats = [v.get("rationale", "N/A") for v in verified if v.get("id")]
+        confs = [v.get("confidence", 0.85) for v in verified if v.get("id")]
+
         self.conn.execute(
             """
-            INSERT OR REPLACE INTO query_cache (query_text, standards_json, created_at)
-            VALUES (?, ?, ?)
+            INSERT OR REPLACE INTO query_cache 
+            (query_text, retrieved_standards, rationales, confidence_scores, created_at)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (norm_query, json.dumps(standards), time.time()),
+            (
+                norm_query,
+                json.dumps(stds),
+                json.dumps(rats),
+                json.dumps(confs),
+                time.time(),
+            ),
         )
 
     def close(self):
@@ -232,25 +270,29 @@ class QueryCache:
 
 
 # RAG Pipeline
-def run_rag_pipeline(query: str) -> list[str]:
+def run_rag_pipeline_detailed(query: str) -> dict:
     """
-    Execute the full RAG pipeline: retrieve → rerank → dual-agent generate.
-    Returns a list of BIS standard ID strings.
+    Execute the full RAG pipeline returning the rich verification report.
     """
     from src.retriever import retrieve_standards
-    from src.generator import generate_response
+    from src.generator import generate_response_detailed
 
     # Step 1: Hybrid retrieval + reranking
     chunks = retrieve_standards(query)
     if not chunks:
         logger.warning("No chunks retrieved for query: %s", query[:60])
-        return []
+        return {
+            "verified": [],
+            "dropped": [],
+            "extractor_count": 0,
+            "verifier_count": 0,
+        }
     # Log retrieval + reranker details
     rerank_scores = [c.get("rerank_score", 0.0) for c in chunks]
     _log_reranker(rerank_scores)
-    # Step 2: Dual-Agent LLM generation
-    standards = generate_response(query, chunks)
-    return standards
+    # Step 2: Single-pass CoT generation
+    report = generate_response_detailed(query, chunks)
+    return report
 
 
 def _warm_up_models():
@@ -314,17 +356,27 @@ def main():
             if cached is not None:
                 latency_ms = (time.time() - start_time) * 1000
                 _log_cache_hit(query_id, latency_ms)
-                standards = cached
+                report = cached
             else:
                 _log_pipeline_start(query_id, query_text)
-                standards = run_rag_pipeline(query_text)
-                cache.put(query_text, standards)
+                report = run_rag_pipeline_detailed(query_text)
+                cache.put(query_text, report)
                 # Log agent stats
                 _log_agent(
-                    extracted=len(standards) + 1,  # approx
-                    verified=len(standards),
-                    dropped=max(0, 1),  # at least checked
+                    extracted=report.get(
+                        "extractor_count", len(report.get("verified", []))
+                    ),
+                    verified=report.get(
+                        "verifier_count", len(report.get("verified", []))
+                    ),
+                    dropped=len(report.get("dropped", [])),
                 )
+
+            # PROTECT THE JUDGES' OUTPUT: Extract just the string IDs
+            standards = [
+                item.get("id") for item in report.get("verified", []) if item.get("id")
+            ]
+
         except Exception as e:
             logger.error("Pipeline failed for id=%s: %s", query_id, e, exc_info=True)
             standards = []  # ← Zero-crash fallback

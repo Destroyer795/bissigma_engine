@@ -88,23 +88,25 @@ async def recommend_standards(req: RecommendRequest):
         cached = query_cache.get(req.query)
         if cached is not None:
             latency = time.time() - start
+            stds = [v.get("id") for v in cached.get("verified", []) if v.get("id")]
             return RecommendResponse(
                 query=req.query,
-                retrieved_standards=cached,
+                retrieved_standards=stds,
                 latency_seconds=round(latency, 4),
                 num_context_chunks=0,
             )
 
         # 2. Run full pipeline on miss
         from src.retriever import retrieve_standards
-        from src.generator import generate_response
+        from src.generator import generate_response_detailed
 
         chunks = retrieve_standards(req.query, final_k=req.top_k)
-        standards = generate_response(req.query, chunks)
-        
+        report = generate_response_detailed(req.query, chunks)
+
         # 3. Store in cache
-        query_cache.put(req.query, standards)
-        
+        query_cache.put(req.query, report)
+
+        standards = [v.get("id") for v in report.get("verified", []) if v.get("id")]
         latency = time.time() - start
 
         return RecommendResponse(
