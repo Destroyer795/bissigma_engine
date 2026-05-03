@@ -34,41 +34,28 @@ from src.config import (
 
 logger = logging.getLogger(__name__)
 
-_chroma_collection = None
+_RERANK_TEXT_LIMIT = 512
+_RERANK_CANDIDATE_CAP = 15
+
+# Global Model Instantiation
+_global_embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
+    model_name=EMBEDDING_MODEL
+)
+_chroma_client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
+_chroma_collection = _chroma_client.get_or_create_collection(
+    name=CHROMA_COLLECTION,
+    embedding_function=_global_embedding_function,
+    metadata={"hnsw:space": "cosine"},
+)
+logger.info("Global ChromaDB collection loaded.")
+
 _bm25_index: Optional[BM25Okapi] = None
 _bm25_corpus: list[dict] = []
-_cross_encoder: Optional[CrossEncoder] = None
-
-_RERANK_TEXT_LIMIT = 512
-_RERANK_CANDIDATE_CAP = 10
 
 
-def _get_collection():
-    """Return the ChromaDB collection, initialising it on first call."""
-    global _chroma_collection
-    if _chroma_collection is None:
-        ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name=EMBEDDING_MODEL
-        )
-        client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
-        _chroma_collection = client.get_or_create_collection(
-            name=CHROMA_COLLECTION,
-            embedding_function=ef,
-            metadata={"hnsw:space": "cosine"},
-        )
-        logger.info(
-            "ChromaDB collection '%s' loaded (%d docs)",
-            CHROMA_COLLECTION,
-            _chroma_collection.count(),
-        )
-    return _chroma_collection
-
-
-def _build_bm25_index():
-    """Build a BM25 index from the ChromaDB corpus (runs once per session)."""
+def _init_bm25_globally():
     global _bm25_index, _bm25_corpus
-    col = _get_collection()
-    results = col.get(include=["documents", "metadatas"])
+    results = _chroma_collection.get(include=["documents", "metadatas"])
     _bm25_corpus = [
         {"id": doc_id, "text": doc, "metadata": meta}
         for doc_id, doc, meta in zip(
@@ -77,25 +64,28 @@ def _build_bm25_index():
     ]
     tokenized = [doc["text"].lower().split() for doc in _bm25_corpus]
     _bm25_index = BM25Okapi(tokenized)
-    logger.info("BM25 index built over %d documents", len(_bm25_corpus))
+    logger.info("Global BM25 index built over %d documents", len(_bm25_corpus))
+
+
+_init_bm25_globally()
+
+logger.info("Loading global cross-encoder: %s", RERANKER_MODEL)
+_cross_encoder = CrossEncoder(RERANKER_MODEL)
+
+
+def _get_collection():
+    """Return the global ChromaDB collection."""
+    return _chroma_collection
 
 
 def _get_cross_encoder() -> CrossEncoder:
-    """Lazy-load the cross-encoder reranker model."""
-    global _cross_encoder
-    if _cross_encoder is None:
-        logger.info("Loading cross-encoder: %s", RERANKER_MODEL)
-        _cross_encoder = CrossEncoder(RERANKER_MODEL)
+    """Return the global cross-encoder model."""
     return _cross_encoder
 
 
 def warm_up():
-    """Eagerly initialise all models so the first query does not pay load cost."""
-    t0 = time.time()
-    _get_collection()
-    _build_bm25_index()
-    _get_cross_encoder()
-    logger.info("Retriever warm-up complete in %.1fs", time.time() - t0)
+    """Warm up is now handled globally at import time, keeping this for API compatibility."""
+    pass
 
 
 def _vector_search(query: str, top_k: int = VECTOR_TOP_K) -> list[dict]:
@@ -123,8 +113,6 @@ def _vector_search(query: str, top_k: int = VECTOR_TOP_K) -> list[dict]:
 
 def _bm25_search(query: str, top_k: int = BM25_TOP_K) -> list[dict]:
     """Sparse keyword retrieval via BM25."""
-    if _bm25_index is None:
-        _build_bm25_index()
     tokens = query.lower().split()
     scores = _bm25_index.get_scores(tokens)
     scored = sorted(zip(_bm25_corpus, scores), key=lambda x: x[1], reverse=True)[:top_k]

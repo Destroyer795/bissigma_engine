@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-inference.py — THE JUDGE'S ENTRY POINT
+inference.py - THE JUDGE'S ENTRY POINT
 Bulletproof evaluation script for the BIS x Sigma Squad AI Hackathon.
 Usage:
     python inference.py --input queries.json --output results.json
@@ -190,7 +190,10 @@ class QueryCache:
 
     def __init__(self, db_path: str):
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(db_path)
+        # Enable connection isolation for basic pooling support
+        self.conn = sqlite3.connect(
+            db_path, check_same_thread=False, isolation_level=None
+        )
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=NORMAL")
         self.conn.execute("""
@@ -204,9 +207,10 @@ class QueryCache:
 
     def get(self, query: str):
         """Return cached standards list or None."""
+        norm_query = query.strip().lower()
         row = self.conn.execute(
             "SELECT standards_json FROM query_cache WHERE query_text = ?",
-            (query,),
+            (norm_query,),
         ).fetchone()
         if row:
             return json.loads(row[0])
@@ -214,14 +218,14 @@ class QueryCache:
 
     def put(self, query: str, standards: list[str]):
         """Insert or replace a query result in the cache."""
+        norm_query = query.strip().lower()
         self.conn.execute(
             """
             INSERT OR REPLACE INTO query_cache (query_text, standards_json, created_at)
             VALUES (?, ?, ?)
             """,
-            (query, json.dumps(standards), time.time()),
+            (norm_query, json.dumps(standards), time.time()),
         )
-        self.conn.commit()
 
     def close(self):
         self.conn.close()

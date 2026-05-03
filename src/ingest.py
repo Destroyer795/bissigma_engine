@@ -31,6 +31,11 @@ CHUNK_SPLIT_PATTERN = re.compile(r"(?=SUMMARY\s+OF\s+IS\s+)", re.IGNORECASE)
 # Extracts a standard ID such as "IS 269 : 1989", "IS 269:1989", or "IS 269"
 STANDARD_ID_PATTERN = re.compile(r"IS\s+(\d{1,5})\s*(?::\s*(\d{4}))?", re.IGNORECASE)
 
+# Global Model Instantiation
+GLOBAL_EMBEDDING_FUNCTION = embedding_functions.SentenceTransformerEmbeddingFunction(
+    model_name=EMBEDDING_MODEL
+)
+
 
 def parse_pdf(pdf_path: Optional[str] = None) -> str:
     """Parse a PDF into markdown using LlamaParse."""
@@ -91,13 +96,10 @@ def build_vectorstore(
     collection_name = collection_name or CHROMA_COLLECTION
     # Ensure persistence directory exists
     Path(persist_dir).mkdir(parents=True, exist_ok=True)
-    ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-        model_name=EMBEDDING_MODEL
-    )
     client = chromadb.PersistentClient(path=persist_dir)
     collection = client.get_or_create_collection(
         name=collection_name,
-        embedding_function=ef,
+        embedding_function=GLOBAL_EMBEDDING_FUNCTION,
         metadata={"hnsw:space": "cosine"},
     )
     # Prepare batch data
