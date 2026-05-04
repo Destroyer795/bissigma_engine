@@ -11,3 +11,4 @@ python-dotenv
 numpy
 httpx
 rich
+torchvision
