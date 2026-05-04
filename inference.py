@@ -5,9 +5,9 @@ Bulletproof evaluation script for the BIS x Sigma Squad AI Hackathon.
 Usage:
     python inference.py --input queries.json --output results.json
 Architectural guarantees:
-  ✓ Zero-crash: every query is wrapped in try/except → empty list fallback
+  ✓ Zero-crash: every query is wrapped in try/except -> empty list fallback
   ✓ SQLite WAL caching: repeated queries resolve in < 1 ms
-  ✓ Dual-Agent verification (Extractor → Verifier) for zero hallucinations
+  ✓ Dual-Agent verification (Extractor -> Verifier) for zero hallucinations
   ✓ Rich terminal logging for enterprise observability
   ✓ Strict JSON schema compliance
 """
@@ -26,6 +26,7 @@ try:
     from rich.panel import Panel
     from rich.table import Table
     from rich.text import Text
+    from rich.status import Status
     from rich import box
 
     console = Console()
@@ -38,6 +39,10 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
 )
 logger = logging.getLogger("inference")
+
+# Silence Noisy Background Logs
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
 
 
 # Rich Logging Helpers
@@ -52,7 +57,7 @@ def _log_header():
     console.print(
         Panel(
             "[bold cyan]BIS Recommendation Engine[/bold cyan]\n"
-            "[dim]Hybrid RAG Pipeline · Dual-Agent Verification · SQLite WAL Cache[/dim]",
+            "[dim]Hybrid RAG Pipeline | Dual-Agent Verification | SQLite WAL Cache[/dim]",
             box=box.DOUBLE_EDGE,
             border_style="cyan",
             padding=(1, 2),
@@ -73,9 +78,11 @@ def _log_warmup(duration: float):
 def _log_cache_hit(query_id: str, latency_ms: float):
     if RICH_AVAILABLE:
         console.print(
-            f"  [bold yellow]CACHE[/bold yellow]  "
-            f"[white]{query_id}[/white] → "
-            f"SQLite WAL hit [green]({latency_ms:.1f}ms)[/green]"
+            Panel(
+                f"[bold cyan][FAST] CACHE HIT DETECTED:[/bold cyan] Returning verified result from SQLite WAL in {latency_ms:.2f}ms",
+                title=f"[white]{query_id}[/white]",
+                border_style="cyan",
+            )
         )
     else:
         logger.info("[CACHE HIT] id=%s (%.1fms)", query_id, latency_ms)
@@ -86,7 +93,7 @@ def _log_pipeline_start(query_id: str, query_text: str):
         short = query_text[:60] + ("..." if len(query_text) > 60 else "")
         console.print(
             f"  [bold blue]PIPELINE[/bold blue]  "
-            f"[white]{query_id}[/white] → [dim]{short}[/dim]"
+            f"[white]{query_id}[/white] -> [dim]{short}[/dim]"
         )
     else:
         logger.info("[PIPELINE] id=%s — %s", query_id, query_text[:60])
@@ -96,7 +103,7 @@ def _log_retrieval(vec_count: int, bm25_count: int, fused_count: int):
     if RICH_AVAILABLE:
         console.print(
             f"    [cyan]├─ RETRIEVAL[/cyan]  "
-            f"Vector: {vec_count} · BM25: {bm25_count} · "
+            f"Vector: {vec_count} | BM25: {bm25_count} | "
             f"Fused: [bold]{fused_count}[/bold] chunks"
         )
     else:
@@ -125,7 +132,7 @@ def _log_agent(extracted: int, verified: int, dropped: int):
         )
         console.print(
             f"    [yellow]├─ AGENT[/yellow]     "
-            f"Extractor: {extracted} → Verifier: [bold]{verified}[/bold] approved."
+            f"Extractor: {extracted} -> Verifier: [bold]{verified}[/bold] approved."
             f"{drop_text}"
         )
     else:
@@ -138,9 +145,11 @@ def _log_result(query_id: str, standards: list[str], latency: float):
     if RICH_AVAILABLE:
         std_str = ", ".join(standards) if standards else "(none)"
         console.print(
-            f"    [green]└─ RESULT[/green]    "
-            f"[bold]{len(standards)}[/bold] standards in "
-            f"[bold cyan]{latency:.2f}s[/bold cyan]: {std_str}"
+            Panel(
+                f"[bold green][SUCCESS] Pipeline Complete:[/bold green] Found {len(standards)} standards in {latency:.2f} seconds\n"
+                f"[dim]Standards:[/dim] {std_str}",
+                border_style="green",
+            )
         )
         console.print()
     else:
@@ -328,7 +337,7 @@ def main():
     _log_header()
     # Load input
     try:
-        with open(args.input, "r", encoding="utf-8") as f:
+        with open(args.input, "r", encoding="utf-8-sig") as f:
             queries = json.load(f)
         if not isinstance(queries, list):
             queries = [queries]
@@ -359,7 +368,16 @@ def main():
                 report = cached
             else:
                 _log_pipeline_start(query_id, query_text)
-                report = run_rag_pipeline_detailed(query_text)
+
+                if RICH_AVAILABLE:
+                    with console.status(
+                        "[bold cyan]Processing query through Hybrid RAG & Dual-Agent Verification...[/bold cyan]",
+                        spinner="dots",
+                    ):
+                        report = run_rag_pipeline_detailed(query_text)
+                else:
+                    report = run_rag_pipeline_detailed(query_text)
+
                 cache.put(query_text, report)
                 # Log agent stats
                 _log_agent(
