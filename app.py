@@ -11,6 +11,10 @@ import streamlit as st
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("app")
+
+# Silence Noisy Background Logs
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
 # Page Config
 st.set_page_config(
     page_title="BIS Compliance Engine",
@@ -290,6 +294,16 @@ if search_clicked and query.strip():
             cached_report = cache.get(query.strip())
 
             if cached_report is not None:
+                from rich.console import Console
+                from rich.panel import Panel
+
+                Console().print(
+                    Panel(
+                        "[bold green]⚡ CACHE HIT DETECTED: Bypassing RAG and returning verified result from SQLite WAL[/bold green]",
+                        expand=False,
+                    )
+                )
+
                 report = cached_report
                 chunks = []
             else:

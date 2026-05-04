@@ -242,6 +242,16 @@ class QueryCache:
                     }
                 )
 
+            from rich.console import Console
+            from rich.panel import Panel
+
+            Console().print(
+                Panel(
+                    "[bold green]⚡ CACHE HIT DETECTED: Bypassing RAG and returning verified result from SQLite WAL[/bold green]",
+                    expand=False,
+                )
+            )
+
             return {
                 "verified": verified,
                 "dropped": [],
